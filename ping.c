@@ -1,5 +1,7 @@
 /*
  * ICMP PING 
+ * version:
+ * 0.1 created	2021 June
  */
 
 #include <arpa/inet.h>
@@ -54,9 +56,7 @@ unsigned short checksum(void *b, int len)
 static void *ping_recv()
 {
   int rc;
-   socklen_t slen;
     fd_set read_set;
-    struct sockaddr_in r_addr;
      char buf[2048];
 	int sockfd = socket(AF_INET, SOCK_RAW, IPPROTO_ICMP);
 
@@ -66,6 +66,7 @@ static void *ping_recv()
   for (;;) {
 	  struct timeval timeout = {3, 0}; //wait max 3 seconds for a reply
 	  memset(&read_set, 0, sizeof read_set);
+
 	  FD_SET(sockfd, &read_set);
 	
 	  rc = select(sockfd + 1, &read_set, NULL, NULL, &timeout);
@@ -76,7 +77,7 @@ static void *ping_recv()
 	      printf("%s: Select faile with %s\n", __func__, strerror(errno));
 	      continue;
 	  }
-	   rc = recvfrom(sockfd, buf, sizeof (buf), 0, (struct sockaddr*)&r_addr, &slen);
+	   rc = recvfrom(sockfd, buf, sizeof (buf), 0, NULL, 0);
 	
 	  if (rc <= 0) {
 	    printf("%s: recv error: %s\n", __func__, strerror(errno));
@@ -84,24 +85,31 @@ static void *ping_recv()
 	  }
     {
 	    struct ip *ip = (struct ip *)buf;
-//      struct icmphdr *pckt = (struct icmphdr *)&buf[ip->ip_hl * 4];
         struct ping_pkt *pckt = (struct ping_pkt *)&buf[ip->ip_hl * 4];
       struct timespec *t_start = (struct timespec *)&pckt->t;
       struct timespec t_end;
+      char *rec_addr;
+      	/*
+	 * get received address
+	 */
+	rec_addr = inet_ntoa(ip->ip_src);
+	printf("%s: FROM %s ", __func__, rec_addr);
 
       if (pckt->hdr.type == ICMP_ECHOREPLY) {
-        printf("%s: ICMP Reply rc=%d, id=0x%x, sequence =  0x%x\n",__func__,rc, pckt->hdr.un.echo.id, pckt->hdr.un.echo.sequence);
-        clock_gettime(CLOCK_REALTIME, &t_end);
-  //      printf("%s: packet %ld %ld\n", __func__, t_start->tv_sec, t_start->tv_nsec);
-  //      printf("%s: system %ld %ld\n", __func__, t_end.tv_sec, t_end.tv_nsec);
-        t_end.tv_sec -= t_start->tv_sec;
-        if (t_end.tv_nsec < t_start->tv_nsec) {
-          t_end.tv_sec--;
-          t_end.tv_nsec = (1000000000 -  t_start->tv_nsec) + t_end.tv_nsec;
-        } else {
-          t_end.tv_nsec -= t_start->tv_nsec;
-        }
-          printf("%s: time laps: %ld ns\n", __func__, t_end.tv_sec * 1000000000 + t_end.tv_nsec);
+	/*
+	 * calculate time if we received orginal packet
+	 */ 
+	        clock_gettime(CLOCK_REALTIME, &t_end);
+	        t_end.tv_sec -= t_start->tv_sec;
+	        if (t_end.tv_nsec < t_start->tv_nsec) {
+	          t_end.tv_sec--;
+	          t_end.tv_nsec = (1000000000 -  t_start->tv_nsec) + t_end.tv_nsec;
+	        } else {
+	          t_end.tv_nsec -= t_start->tv_nsec;
+	        }
+	          printf(" time laps: %ld ns ", t_end.tv_sec * 1000000000 + t_end.tv_nsec);
+
+        printf(" ICMP Reply rc=%d, id=0x%x, sequence =  0x%x\n", rc, pckt->hdr.un.echo.id, pckt->hdr.un.echo.sequence);
 
 /*        s  = spec.tv_sec;
     ms = round(spec.tv_nsec / 1.0e6); // Convert nanoseconds to milliseconds
@@ -110,11 +118,13 @@ static void *ping_recv()
         ms = 0;
     }
 */
-
+/*
+ * debug pct
+ */
 //  for (i = 0; i < rc; i++) printf("%s: BYTE %d - D %u X %x C %c\n", __func__, i, buf[i], buf[i], buf[i]);  
 
       } else {
-        printf("%s: Got ICMP packet with type 0x%x ?!?\n", __func__, pckt->hdr.type);
+        printf(" Got ICMP packet with type 0x%x ?!?\n", pckt->hdr.type);
       }
     }
   }
@@ -137,11 +147,11 @@ int ping_send()
 	printf ("%s: sockfd OK\n", __func__);
 
   printf ("%s: start with sockfd %d\n", __func__, sockfd);
-  for (n = 30; n < 35; n++) {
+  for (n = 165; n < 172; n++) {
     int i;
   struct in_addr dst;
-
-    sprintf(ip, "10.124.222.%d", n);
+	sprintf(ip,"188.191.220.%d", n);
+  //  sprintf(ip, "192.168.11.%d", n);
 	  inet_aton(ip, &dst);
 	  addr.sin_family = AF_INET;
 	  addr.sin_port = htons (0);
@@ -170,14 +180,14 @@ int ping_send()
      */
     clock_gettime(CLOCK_REALTIME, &pckt.t);
 
-	  pckt.hdr.checksum = checksum(&pckt, sizeof(pckt));
+	pckt.hdr.checksum = checksum(&pckt, sizeof(pckt));
 	
 	  if (sendto(sockfd, &pckt, sizeof(pckt), 0, (struct sockaddr*)&addr, sizeof(addr)) <= 0) {
 	    printf ("%s: sendto error %d\n", __func__, sockfd);
 	    return 1;
 	  }
 
-    printf ("%s: sendto %s OK seq: %d i %d\n", __func__, ip, n, i);
+    printf ("%s: sendto %s OK seq: %x id %x\n", __func__, ip, n, i);
  //   sleep (1);
   } 
   return 0;
