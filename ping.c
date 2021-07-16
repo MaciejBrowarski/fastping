@@ -26,10 +26,11 @@
 // ping packet structure
 
 #define PING_PKT_S 64
-#define IP_START 160 
-#define IP_SIZE 180
+#define IP_START 2
+#define IP_SIZE 255
 
-char ip_base[20];
+int debug = 0;
+char ip_base[12];
 
 char ip_ok[IP_SIZE];
 
@@ -72,7 +73,7 @@ static void *ping_recv()
 		return 0;
 	}
 
-	printf ("%s: start with sockfd %d\n", __func__, sockfd);
+	if (debug) printf ("%s: start with sockfd %d\n", __func__, sockfd);
 
     /*
      * wait for a reply with a timeout
@@ -94,7 +95,7 @@ static void *ping_recv()
         rc = recvfrom(sockfd, buf, sizeof (buf), 0, NULL, 0);
 	
         if (rc <= 0) {
-            printf("%s: recv error: %s\n", __func__, strerror(errno));
+            if (debug) printf("%s: recv error: %s\n", __func__, strerror(errno));
             return 0;
         }
 	    {
@@ -108,10 +109,7 @@ static void *ping_recv()
 	        * get received address
 	        */
 	        rec_addr = inet_ntoa(ip->ip_src);
-	        if (! strncmp(ip_base, rec_addr, strlen(ip_base) - 1)) {
-                printf ("OK -> ");
-            }
-printf("%s: FROM %s ", __func__, rec_addr);
+            if (debug) printf("%s: FROM %s ", __func__, rec_addr);
 	
 	        if (pckt->hdr.type == ICMP_ECHOREPLY) {
 	        /*
@@ -125,9 +123,9 @@ printf("%s: FROM %s ", __func__, rec_addr);
 	        } else {
 	            t_end.tv_nsec -= t_start->tv_nsec;
 	        }
-	        printf(" time laps: %ld ns ", t_end.tv_sec * 1000000000 + t_end.tv_nsec);
+	        if (debug) printf(" time laps: %ld ns ", t_end.tv_sec * 1000000000 + t_end.tv_nsec);
             seq = pckt->hdr.un.echo.sequence;	
-	        printf(" ICMP Reply rc=%d, id=0x%x, sequence =  0x%x - %s.%d\n", rc, pckt->hdr.un.echo.id, seq, ip_base, seq);
+	        if (debug) printf(" ICMP Reply rc=%d, id=0x%x, sequence =  0x%x - %s.%d\n", rc, pckt->hdr.un.echo.id, seq, ip_base, seq);
 
             if (! strncmp(ip_base, rec_addr, strlen(ip_base) - 1)) {
                 ip_ok[seq] = 1;	
@@ -145,7 +143,7 @@ printf("%s: FROM %s ", __func__, rec_addr);
 	//  for (i = 0; i < rc; i++) printf("%s: BYTE %d - D %u X %x C %c\n", __func__, i, buf[i], buf[i], buf[i]);  
 	
 	        } else {
-	            printf(" Got ICMP packet with type 0x%x ?!?\n", pckt->hdr.type);
+	            if (debug) printf(" Got ICMP packet with type 0x%x ?!?\n", pckt->hdr.type);
 	        } // if (pckt->hdr.type)
 	    }
     } // for (;;)
@@ -155,7 +153,8 @@ printf("%s: FROM %s ", __func__, rec_addr);
 int ping_send_work(int sockfd)
 {
     int i;
-    char ip[15];
+    // 123.123.123.123 -  - 15 + NULL
+    char ip[16];
     uint16_t   n = 1;
     struct in_addr dst;
     struct ping_pkt pckt;
@@ -169,7 +168,6 @@ int ping_send_work(int sockfd)
         if (ip_ok[n]) { continue; }
 
         sprintf(ip,"%s.%d", ip_base, n);
-	    // sprintf(ip, "192.168.11.%d", n);
         
 		inet_aton(ip, &dst);
 		addr.sin_family = AF_INET;
@@ -206,7 +204,7 @@ int ping_send_work(int sockfd)
 		    return 1;
         }
 	
-	    printf ("%s: sendto %s OK seq: %x id %x\n", __func__, ip, n, i);
+	    if (debug) printf ("%s: sendto %s OK seq: %x id %x\n", __func__, ip, n, i);
 	 //   sleep (1);
     } // for 
     return 0;
@@ -223,9 +221,9 @@ int ping_send()
 		printf ("%s: sockfd failed\n", __func__);
 		return 1;
 	}
-	printf ("%s: sockfd OK\n", __func__);
+	if (debug) printf ("%s: sockfd OK\n", __func__);
 
-    printf ("%s: start with sockfd %d\n", __func__, sockfd);
+    if (debug) printf ("%s: start with sockfd %d\n", __func__, sockfd);
     for (n = 0; n < IP_SIZE; n++) {
         ip_ok[n] = 0;
     }
@@ -239,6 +237,7 @@ int ping_send()
 int main(int argc, char *argv[])
 {
     pthread_t precv;
+    int n;
 
     if (argc < 2) {
         printf ("%s: %s A.B.C\n", __func__, argv[0]);
@@ -255,7 +254,12 @@ int main(int argc, char *argv[])
     }
     ping_send();
     sleep (5);
-
+    for (n = IP_START; n < IP_SIZE; n++) {
+        if (ip_ok[n]) {
+            printf ("%s.%d\n", ip_base, n);
+        }
+    }
+ 
 	return 0;
 }
 	
